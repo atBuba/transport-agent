@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Fullscreen Chat</title>
+    <!-- Подключаем библиотеку для Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* Обнуляем отступы для полного экрана */
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        body { 
+            display: flex; 
+            flex-direction: column; 
+            background-color: #f0f2f5; 
+        }
+
+        /* Заголовок */
+        header {
+            background-color: #fff;
+            padding: 15px 20px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+        header h2 { margin: 0; font-size: 1.2rem; color: #333; }
+
+        /* Основной контейнер чата растягивается на все доступное место */
+        .chat-container { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            max-width: 1000px; /* Ограничим ширину контента, чтобы на 4k мониторах строки не были километровыми */
+            width: 100%;
+            margin: 0 auto;
+            position: relative;
+            background: #fff;
+        }
+
+        /* Область сообщений */
+        #messages { 
+            flex: 1; 
+            overflow-y: auto; 
+            padding: 20px; 
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        /* Стили сообщений */
+        .message { 
+            padding: 10px 18px; 
+            border-radius: 12px; 
+            max-width: 85%; 
+            line-height: 1.5;
+            position: relative;
+            word-wrap: break-word;
+        }
+        
+        .user { 
+            background-color: #007bff; 
+            color: white; 
+            align-self: flex-end; 
+            border-bottom-right-radius: 2px;
+        }
+        
+        .bot { 
+            background-color: #f1f0f0; 
+            color: #2c2c2c; 
+            align-self: flex-start; 
+            border-bottom-left-radius: 2px;
+        }
+
+        /* Стили для Markdown внутри сообщений бота */
+        .bot pre { background: #e0e0e0; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        .bot code { font-family: monospace; background: rgba(0,0,0,0.05); padding: 2px 4px; border-radius: 3px; }
+        .bot pre code { background: transparent; padding: 0; }
+        .bot p { margin: 5px 0; }
+        .bot ul, .bot ol { margin: 5px 0; padding-left: 20px; }
+
+        /* Область ввода */
+        .input-area { 
+            padding: 20px; 
+            background: #fff; 
+            border-top: 1px solid #ddd; 
+            display: flex; 
+            gap: 10px; 
+        }
+
+        input { 
+            flex: 1; 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 25px; 
+            font-size: 16px; 
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus { border-color: #007bff; }
+
+        button { 
+            padding: 0 25px; 
+            background-color: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 25px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        .btn-clear {
+            background: transparent;
+            color: #dc3545;
+            border: 1px solid #dc3545;
+            padding: 5px 15px;
+            font-size: 0.8rem;
+            border-radius: 5px;
+        }
+        .btn-clear:hover { background: #dc3545; color: white; }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>🤖 AI Assistant</h2>
+        <button onclick="clearHistory()" class="btn-clear">Очистить чат</button>
+    </header>
+
+    <div class="chat-container">
+        <div id="messages">
+            <div class="message bot">Привет! Я готов к работе. Чем помочь?</div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="Введите сообщение..." onkeypress="handleEnter(event)" autocomplete="off">
+            <button onclick="sendMessage()" id="sendBtn">➤</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://localhost:8081";
+        const SESSION_ID = "user_session_v2"; // Новая сессия
+
+        async function sendMessage() {
+            const inputField = document.getElementById('userInput');
+            const message = inputField.value.trim();
+            if (!message) return;
+
+            // 1. Показываем сообщение пользователя (как обычный текст)
+            addMessage(message, 'user');
+            inputField.value = '';
+            setLoading(true);
+
+            try {
+                const response = await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message, session_id: SESSION_ID })
+                });
+
+                if (!response.ok) throw new Error('Ошибка сети');
+                const data = await response.json();
+                
+                // 2. Показываем ответ (парсим Markdown)
+                addMessage(data.response, 'bot', true);
+            } catch (error) {
+                addMessage(`Ошибка: ${error.message}`, 'bot');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function clearHistory() {
+            if(!confirm('Удалить историю?')) return;
+            try {
+                await fetch(`${API_URL}/history/${SESSION_ID}`, { method: 'DELETE' });
+                document.getElementById('messages').innerHTML = '<div class="message bot">История очищена.</div>';
+            } catch(e) { alert("Ошибка API"); }
+        }
+
+        // Функция добавления сообщения. Третий параметр isMarkdown включает рендеринг HTML
+        function addMessage(text, sender, isMarkdown = false) {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender}`;
+            
+            if (isMarkdown && sender === 'bot') {
+                // Используем библиотеку marked для превращения Markdown в HTML
+                msgDiv.innerHTML = marked.parse(text);
+            } else {
+                // Для пользователя всегда выводим как текст (защита от XSS)
+                msgDiv.textContent = text;
+            }
+
+            messagesDiv.appendChild(msgDiv);
+            
+            // Прокрутка вниз
+            requestAnimationFrame(() => {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            });
+        }
+
+        function setLoading(isLoading) {
+            const btn = document.getElementById('sendBtn');
+            const input = document.getElementById('userInput');
+            btn.disabled = isLoading;
+            input.disabled = isLoading;
+            btn.textContent = isLoading ? '...' : '➤';
+            if (!isLoading) input.focus();
+        }
+
+        function handleEnter(e) {
+            if (e.key === 'Enter') sendMessage();
+        }
+    </script>
+</body>
+</html>
