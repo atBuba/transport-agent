@@ -145,7 +145,7 @@
     </div>
 
     <script>
-        const API_URL = "http://localhost:8081";
+        const API_URL = `http://${window.location.hostname}:8081`;
         const SESSION_ID = "user_session_v2"; // Новая сессия
 
         async function sendMessage() {
